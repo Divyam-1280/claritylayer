@@ -1,18 +1,14 @@
 "use client";
 
-import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Loader2, CheckCircle, ArrowUpRight } from "lucide-react";
+import { Loader2, CheckCircle } from "lucide-react";
 import ConfidenceBar from "./ConfidenceBar";
 import AccordionSection from "./AccordionSection";
-import RefineModal from "./RefineModal";
-import type { AuditData, PillType, RefineFormData } from "@/lib/types";
+import type { AuditData, PillType } from "@/lib/types";
 import { PILL_COLORS } from "@/lib/types";
 
 interface ClarityPanelProps {
   auditData: AuditData;
-  onRefine: (data: RefineFormData) => Promise<void>;
-  onFollowUp: () => void;
   isReanalysing: boolean;
   wasRefined: boolean;
   diffSummary?: string;
@@ -20,24 +16,15 @@ interface ClarityPanelProps {
 
 export default function ClarityPanel({
   auditData,
-  onRefine,
-  onFollowUp,
   isReanalysing,
   wasRefined,
   diffSummary,
 }: ClarityPanelProps) {
-  const [showRefineModal, setShowRefineModal] = useState(false);
-
   const allEmpty =
     auditData.assumptions.length === 0 &&
     auditData.uncertainClaims.length === 0 &&
     auditData.gaps.length === 0 &&
     auditData.alternatives.length === 0;
-
-  const handleRefineSubmit = async (data: RefineFormData) => {
-    setShowRefineModal(false);
-    await onRefine(data);
-  };
 
   return (
     <div className="h-full flex flex-col relative">
@@ -155,7 +142,7 @@ export default function ClarityPanel({
         )}
 
         {/* Color legend */}
-        <div className="flex flex-wrap items-center gap-4 mb-5 pt-3 border-t border-[#E4E2DC]">
+        <div className="flex flex-wrap items-center gap-4 pt-3 border-t border-[#E4E2DC]">
           {(
             Object.entries(PILL_COLORS) as [
               PillType,
@@ -173,31 +160,6 @@ export default function ClarityPanel({
           ))}
         </div>
       </div>
-
-      {/* Bottom action buttons */}
-      <div className="flex flex-col gap-2.5 pt-4 border-t border-[#E4E2DC]">
-        <button
-          onClick={() => setShowRefineModal(true)}
-          className="w-full h-[44px] bg-[#18181B] text-white text-[15px] font-medium rounded-[12px] hover:bg-[#27272A] transition-colors flex items-center justify-center gap-2"
-        >
-          Refine with my context
-          <span>→</span>
-        </button>
-        <button
-          onClick={onFollowUp}
-          className="w-full h-[44px] bg-white text-[#18181B] text-[15px] font-medium rounded-[12px] border border-[#E4E2DC] hover:bg-[#F9FAFB] transition-colors flex items-center justify-center gap-2"
-        >
-          Ask a follow-up
-          <ArrowUpRight className="h-4 w-4" />
-        </button>
-      </div>
-
-      {/* Refine Modal */}
-      <RefineModal
-        isOpen={showRefineModal}
-        onClose={() => setShowRefineModal(false)}
-        onSubmit={handleRefineSubmit}
-      />
     </div>
   );
 }

@@ -2,11 +2,22 @@
 
 import { useState, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, Info, AlertCircle, RefreshCw, ChevronUp } from "lucide-react";
+import {
+  Sparkles,
+  Info,
+  AlertCircle,
+  RefreshCw,
+  ChevronUp,
+  X,
+  Search,
+  Zap,
+  Shield,
+  Layers,
+} from "lucide-react";
 import SearchBar from "@/components/SearchBar";
 import ResponsePanel from "@/components/ResponsePanel";
 import ClarityPanel from "@/components/ClarityPanel";
-import type { AuditData, RefineFormData } from "@/lib/types";
+import type { AuditData } from "@/lib/types";
 import { FALLBACK_AUDIT } from "@/lib/types";
 
 const SUGGESTED_PROMPTS = [
@@ -24,19 +35,23 @@ export default function Home() {
   const [response, setResponse] = useState("");
   const [auditData, setAuditData] = useState<AuditData | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
-  const [isReanalysing, setIsReanalysing] = useState(false);
-  const [wasRefined, setWasRefined] = useState(false);
-  const [diffSummary, setDiffSummary] = useState("");
+  const [isReanalysing] = useState(false);
+  const [wasRefined] = useState(false);
+  const [diffSummary] = useState("");
   const [showMobileAudit, setShowMobileAudit] = useState(false);
+  const [showHowItWorks, setShowHowItWorks] = useState(false);
+  const [prefillValue, setPrefillValue] = useState<string | undefined>(
+    undefined
+  );
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const handleSubmit = useCallback(async (prompt: string) => {
     setQuery(prompt);
     setAppState("loading");
     setErrorMessage("");
-    setWasRefined(false);
-    setDiffSummary("");
     setShowMobileAudit(false);
+    // Reset prefill so it doesn't re-trigger
+    setPrefillValue(undefined);
 
     try {
       // First call: get Gemini response
@@ -86,140 +101,18 @@ export default function Home() {
     }
   }, []);
 
-  const handleRefine = useCallback(
-    async (data: RefineFormData) => {
-      setIsReanalysing(true);
-      const previousAudit = auditData;
-
-      try {
-        const userContext = [
-          data.purpose && `Purpose: ${data.purpose}`,
-          data.corrections && `Corrections: ${data.corrections}`,
-          data.rating && `User rating: ${data.rating}`,
-          data.priorities.length > 0 &&
-            `Priorities: ${data.priorities.join(", ")}`,
-        ]
-          .filter(Boolean)
-          .join("\n");
-
-        if (data.rerunQuery) {
-          // Re-run full query with context
-          const enrichedPrompt = `${userContext}\n\nOriginal question: ${query}`;
-
-          const geminiRes = await fetch("/api/gemini", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ prompt: enrichedPrompt }),
-          });
-
-          if (geminiRes.ok) {
-            const geminiData = await geminiRes.json();
-            setResponse(geminiData.response);
-
-            const analyseRes = await fetch("/api/analyse", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                response: geminiData.response,
-                userPrompt: query,
-                userContext,
-              }),
-            });
-
-            if (analyseRes.ok) {
-              const newAudit = await analyseRes.json();
-              if (!newAudit.error) {
-                setAuditData(newAudit);
-                generateDiffSummary(previousAudit, newAudit);
-              }
-            }
-          }
-        } else {
-          // Just re-analyse with context
-          const analyseRes = await fetch("/api/analyse", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              response,
-              userPrompt: query,
-              userContext,
-            }),
-          });
-
-          if (analyseRes.ok) {
-            const newAudit = await analyseRes.json();
-            if (!newAudit.error) {
-              setAuditData(newAudit);
-              generateDiffSummary(previousAudit, newAudit);
-            }
-          }
-        }
-
-        setWasRefined(true);
-      } catch (err) {
-        console.error("Refine error:", err);
-      } finally {
-        setIsReanalysing(false);
-      }
-    },
-    [query, response, auditData]
-  );
-
-  const generateDiffSummary = (
-    prev: AuditData | null,
-    next: AuditData
-  ) => {
-    if (!prev) return;
-
-    const parts: string[] = [];
-    const assumptionDiff =
-      prev.assumptions.length - next.assumptions.length;
-    if (assumptionDiff > 0)
-      parts.push(`${assumptionDiff} assumption${assumptionDiff > 1 ? "s" : ""} resolved`);
-    if (assumptionDiff < 0)
-      parts.push(`${Math.abs(assumptionDiff)} new assumption${Math.abs(assumptionDiff) > 1 ? "s" : ""}`);
-
-    const scoreDiff = next.confidenceScore - prev.confidenceScore;
-    if (scoreDiff !== 0)
-      parts.push(`confidence ${scoreDiff > 0 ? "+" : ""}${scoreDiff}`);
-
-    const gapDiff = next.gaps.length - prev.gaps.length;
-    if (gapDiff > 0)
-      parts.push(`${gapDiff} new gap${gapDiff > 1 ? "s" : ""} identified`);
-    if (gapDiff < 0)
-      parts.push(`${Math.abs(gapDiff)} gap${Math.abs(gapDiff) > 1 ? "s" : ""} resolved`);
-
-    setDiffSummary(parts.join(" · ") || "Analysis updated with your context");
-  };
-
   const handleNewQuestion = useCallback(() => {
     setAppState("idle");
     setQuery("");
     setResponse("");
     setAuditData(null);
     setErrorMessage("");
-    setWasRefined(false);
-    setDiffSummary("");
     setShowMobileAudit(false);
-    setTimeout(() => searchInputRef.current?.focus(), 100);
-  }, []);
-
-  const handleFollowUp = useCallback(() => {
-    if (searchInputRef.current) {
-      searchInputRef.current.value = "Based on the above, ";
-      searchInputRef.current.focus();
-      // Trigger React's onChange
-      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-        window.HTMLInputElement.prototype,
-        "value"
-      )?.set;
-      if (nativeInputValueSetter) {
-        nativeInputValueSetter.call(searchInputRef.current, "Based on the above, ");
-        searchInputRef.current.dispatchEvent(
-          new Event("input", { bubbles: true })
-        );
-      }
-    }
+    setPrefillValue("");
+    setTimeout(() => {
+      setPrefillValue(undefined);
+      searchInputRef.current?.focus();
+    }, 100);
   }, []);
 
   const handleSuggestedPrompt = useCallback(
@@ -248,12 +141,132 @@ export default function Home() {
         </div>
         <div className="flex items-center gap-4">
           <span className="text-[12px] text-[#9CA3AF]">v0.1.0</span>
-          <button className="text-[13px] text-[#6B7280] hover:text-[#18181B] transition-colors flex items-center gap-1">
+          <button
+            onClick={() => setShowHowItWorks(true)}
+            className="text-[13px] text-[#6B7280] hover:text-[#18181B] transition-colors flex items-center gap-1"
+          >
             <Info className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">How it works</span>
           </button>
         </div>
       </nav>
+
+      {/* ─── HOW IT WORKS MODAL ─── */}
+      <AnimatePresence>
+        {showHowItWorks && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 z-50 flex items-center justify-center"
+            onClick={() => setShowHowItWorks(false)}
+          >
+            <div className="absolute inset-0 bg-black/40" />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ duration: 0.2 }}
+              onClick={(e) => e.stopPropagation()}
+              className="relative bg-white rounded-[16px] w-full max-w-[520px] mx-4 p-7 shadow-xl"
+            >
+              <button
+                onClick={() => setShowHowItWorks(false)}
+                className="absolute top-4 right-4 p-1 rounded-full hover:bg-[#F3F4F6] transition-colors"
+              >
+                <X className="h-5 w-5 text-[#6B7280]" />
+              </button>
+
+              <div className="flex items-center gap-3 mb-5">
+                <div className="w-10 h-10 rounded-xl bg-[#4338CA] flex items-center justify-center">
+                  <span className="text-white text-[18px] font-semibold">
+                    C
+                  </span>
+                </div>
+                <div>
+                  <h2 className="text-[18px] font-semibold text-[#18181B]">
+                    How ClarityLayer Works
+                  </h2>
+                  <p className="text-[12px] text-[#9CA3AF]">
+                    3-step AI audit process
+                  </p>
+                </div>
+              </div>
+
+              <div className="h-px bg-[#E4E2DC] mb-5" />
+
+              <div className="space-y-5">
+                {/* Step 1 */}
+                <div className="flex gap-4">
+                  <div className="w-10 h-10 shrink-0 rounded-xl bg-[#EEF2FF] flex items-center justify-center">
+                    <Search className="h-5 w-5 text-[#4338CA]" />
+                  </div>
+                  <div>
+                    <h3 className="text-[14px] font-semibold text-[#18181B] mb-1">
+                      1. You ask a question
+                    </h3>
+                    <p className="text-[13px] text-[#6B7280] leading-relaxed">
+                      Type any question or prompt. ClarityLayer sends it to
+                      Google&apos;s Gemini AI and retrieves a full response.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Step 2 */}
+                <div className="flex gap-4">
+                  <div className="w-10 h-10 shrink-0 rounded-xl bg-[#FFFBEB] flex items-center justify-center">
+                    <Zap className="h-5 w-5 text-[#D97706]" />
+                  </div>
+                  <div>
+                    <h3 className="text-[14px] font-semibold text-[#18181B] mb-1">
+                      2. AI audits the AI
+                    </h3>
+                    <p className="text-[13px] text-[#6B7280] leading-relaxed">
+                      A second Gemini call analyses the response for
+                      assumptions, uncertain language, missing information, and
+                      one-sided framing — producing a structured audit report.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Step 3 */}
+                <div className="flex gap-4">
+                  <div className="w-10 h-10 shrink-0 rounded-xl bg-[#ECFDF5] flex items-center justify-center">
+                    <Shield className="h-5 w-5 text-[#16A34A]" />
+                  </div>
+                  <div>
+                    <h3 className="text-[14px] font-semibold text-[#18181B] mb-1">
+                      3. You evaluate with clarity
+                    </h3>
+                    <p className="text-[13px] text-[#6B7280] leading-relaxed">
+                      The audit panel shows a confidence score, flagged
+                      sentences with detailed reasons, and highlights key
+                      phrases directly in the response text — so you know
+                      exactly what to trust, question, or verify.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="h-px bg-[#E4E2DC] mt-5 mb-4" />
+
+              <div className="flex items-start gap-3 bg-[#F7F6F3] rounded-[12px] p-4">
+                <Layers className="h-4 w-4 text-[#9CA3AF] mt-0.5 shrink-0" />
+                <p className="text-[12px] text-[#6B7280] leading-relaxed">
+                  <span className="font-medium text-[#18181B]">
+                    Why does this matter?
+                  </span>{" "}
+                  AI responses can sound confident even when they&apos;re making
+                  assumptions or lacking evidence. ClarityLayer helps you
+                  see past the surface and make better decisions with
+                  AI-generated content.
+                </p>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ─── MAIN CONTENT ─── */}
       <main className="flex-1 flex flex-col overflow-hidden">
@@ -316,6 +329,7 @@ export default function Home() {
                   isLoading={false}
                   hasResponse={false}
                   inputRef={searchInputRef}
+                  prefillValue={prefillValue}
                 />
               </div>
 
@@ -358,6 +372,7 @@ export default function Home() {
                 isLoading={appState === "loading"}
                 hasResponse={true}
                 inputRef={searchInputRef}
+                prefillValue={prefillValue}
               />
             </motion.div>
 
@@ -404,8 +419,6 @@ export default function Home() {
                   ) : auditData ? (
                     <ClarityPanel
                       auditData={auditData}
-                      onRefine={handleRefine}
-                      onFollowUp={handleFollowUp}
                       isReanalysing={isReanalysing}
                       wasRefined={wasRefined}
                       diffSummary={diffSummary}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Search, Loader2, ArrowRight } from "lucide-react";
 
@@ -9,6 +9,7 @@ interface SearchBarProps {
   isLoading: boolean;
   hasResponse: boolean;
   inputRef?: React.RefObject<HTMLInputElement | null>;
+  prefillValue?: string;
 }
 
 export default function SearchBar({
@@ -16,10 +17,23 @@ export default function SearchBar({
   isLoading,
   hasResponse,
   inputRef: externalRef,
+  prefillValue,
 }: SearchBarProps) {
   const [query, setQuery] = useState("");
-  const internalRef = useRef<HTMLInputElement>(null);
-  const ref = externalRef || internalRef;
+
+  // Sync prefillValue into local state when it changes
+  useEffect(() => {
+    if (prefillValue !== undefined) {
+      setQuery(prefillValue);
+      // Focus the input after prefill
+      if (externalRef?.current) {
+        externalRef.current.focus();
+        // Place cursor at end
+        const len = prefillValue.length;
+        externalRef.current.setSelectionRange(len, len);
+      }
+    }
+  }, [prefillValue]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,16 +41,6 @@ export default function SearchBar({
       onSubmit(query.trim());
     }
   };
-
-  // Allow external prefill
-  useEffect(() => {
-    if (ref.current) {
-      const currentVal = ref.current.value;
-      if (currentVal && currentVal !== query) {
-        setQuery(currentVal);
-      }
-    }
-  }, []);
 
   return (
     <form onSubmit={handleSubmit} className="w-full max-w-[720px] mx-auto">
@@ -51,7 +55,7 @@ export default function SearchBar({
       >
         <Search className="ml-4 mr-2 h-[18px] w-[18px] text-[#9CA3AF] shrink-0" />
         <input
-          ref={ref}
+          ref={externalRef}
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}

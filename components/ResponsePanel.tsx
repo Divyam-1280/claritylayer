@@ -1,15 +1,15 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { motion } from "framer-motion";
 import { Copy, Check, ArrowRight } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import InlinePills from "./InlinePills";
 import type {
   InlinePhrase,
   PillType,
-  MatchFeedback,
 } from "@/lib/types";
-import { FEEDBACK_GUIDANCE, PILL_COLORS } from "@/lib/types";
+import { PILL_COLORS } from "@/lib/types";
 
 interface ResponsePanelProps {
   response: string;
@@ -23,7 +23,6 @@ export default function ResponsePanel({
   onNewQuestion,
 }: ResponsePanelProps) {
   const [copied, setCopied] = useState(false);
-  const [feedback, setFeedback] = useState<MatchFeedback | null>(null);
   const [activeFilter, setActiveFilter] = useState<PillType | null>(null);
 
   const wordCount = useMemo(() => {
@@ -40,12 +39,19 @@ export default function ResponsePanel({
     setActiveFilter((prev) => (prev === type ? null : type));
   };
 
-  const handleFeedback = (f: MatchFeedback) => {
-    setFeedback((prev) => (prev === f ? null : f));
+  // We only want to apply InlinePills to text content, so we create a custom renderer
+  // that wraps text nodes with InlinePills when phrases are present.
+  const renderTextWithPills = (text: string) => {
+    if (inlinePhrases.length === 0) return text;
+    return (
+      <InlinePills
+        text={text}
+        phrases={inlinePhrases}
+        activeFilter={activeFilter}
+        onPillClick={handlePillClick}
+      />
+    );
   };
-
-  // Split response into paragraphs for rendering
-  const paragraphs = response.split(/\n\n+/).filter(Boolean);
 
   return (
     <div className="h-full flex flex-col">
@@ -56,84 +62,68 @@ export default function ResponsePanel({
         </span>
       </div>
 
-      {/* Response text with inline pills */}
+      {/* Response text with proper markdown rendering and inline pills */}
       <div className="flex-1 overflow-y-auto mb-6 pr-1">
-        <div className="prose-container">
-          {paragraphs.map((paragraph, i) => {
-            // Check if it looks like a code block
-            if (paragraph.startsWith("```")) {
-              const lines = paragraph.split("\n");
-              const code = lines.slice(1, -1).join("\n") || lines.slice(1).join("\n");
-              return (
-                <pre
-                  key={i}
-                  className="bg-[#F7F6F3] rounded-[8px] p-4 text-[13px] font-mono text-[#18181B] overflow-x-auto mb-4 border border-[#E4E2DC]/50"
-                >
-                  <code>{code}</code>
-                </pre>
-              );
-            }
-
-            // Check if it looks like a heading (markdown style)
-            const headingMatch = paragraph.match(/^(#{1,3})\s+(.+)/);
-            if (headingMatch) {
-              const level = headingMatch[1].length;
-              const text = headingMatch[2];
-              const sizes: Record<number, string> = {
-                1: "text-[18px]",
-                2: "text-[16px]",
-                3: "text-[15px]",
-              };
-              return (
-                <p
-                  key={i}
-                  className={`${sizes[level] || "text-[15px]"} font-semibold text-[#18181B] mb-3`}
-                >
-                  {text}
-                </p>
-              );
-            }
-
-            // Check if it's a list
-            const listItems = paragraph.split("\n").filter((l) => /^[\-\*\d+\.]\s/.test(l.trim()));
-            if (listItems.length > 1) {
-              return (
-                <ul key={i} className="mb-4 space-y-1.5">
-                  {paragraph.split("\n").map((line, j) => {
-                    const cleaned = line.replace(/^[\-\*]\s+/, "").replace(/^\d+\.\s+/, "");
-                    return (
-                      <li
-                        key={j}
-                        className="text-[15px] text-[#18181B] leading-[1.75] pl-4 relative before:content-['•'] before:absolute before:left-0 before:text-[#9CA3AF]"
-                      >
-                        <InlinePills
-                          text={cleaned}
-                          phrases={inlinePhrases}
-                          activeFilter={activeFilter}
-                          onPillClick={handlePillClick}
-                        />
-                      </li>
-                    );
-                  })}
-                </ul>
-              );
-            }
-
-            // Regular paragraph
-            return (
-              <p
-                key={i}
-                className="text-[15px] text-[#18181B] leading-[1.75] mb-4 font-[family-name:var(--font-geist-sans)]"
-              >
-                <InlinePills
-                  text={paragraph}
-                  phrases={inlinePhrases}
-                  activeFilter={activeFilter}
-                  onPillClick={handlePillClick}
-                />
-              </p>
-            );
-          })}
+        <div className="prose-container prose prose-sm max-w-none prose-p:leading-[1.75] prose-p:text-[15px] prose-p:text-[#18181B] prose-li:text-[15px] prose-li:text-[#18181B] prose-strong:text-[#18181B] prose-strong:font-semibold prose-headings:text-[#18181B] prose-a:text-[#4338CA] prose-a:no-underline hover:prose-a:underline">
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={{
+              // Override paragraph to support inline pills
+              p({ children }) {
+                return (
+                  <p className="mb-4 last:mb-0">
+                    {/* ReactMarkdown passes children as array of strings/elements. We need to handle strings. */}
+                    {Array.isArray(children)
+                      ? children.map((child, i) =>
+                          typeof child === "string" ? (
+                            <span key={i}>{renderTextWithPills(child)}</span>
+                          ) : (
+                            child
+                          )
+                        )
+                      : typeof children === "string"
+                      ? renderTextWithPills(children)
+                      : children}
+                  </p>
+                );
+              },
+              // Override list items similarly
+              li({ children }) {
+                return (
+                  <li>
+                    {Array.isArray(children)
+                      ? children.map((child, i) =>
+                          typeof child === "string" ? (
+                            <span key={i}>{renderTextWithPills(child)}</span>
+                          ) : (
+                            child
+                          )
+                        )
+                      : typeof children === "string"
+                      ? renderTextWithPills(children)
+                      : children}
+                  </li>
+                );
+              },
+              // Code blocks
+              code({ node, inline, className, children, ...props }: any) {
+                const match = /language-(\w+)/.exec(className || "");
+                return !inline ? (
+                  <pre className="bg-[#F7F6F3] rounded-[8px] p-4 text-[13px] font-mono text-[#18181B] overflow-x-auto mb-4 border border-[#E4E2DC]/50">
+                    <code className={className} {...props}>
+                      {children}
+                    </code>
+                  </pre>
+                ) : (
+                  <code className="bg-[#F7F6F3] px-1.5 py-0.5 rounded-[4px] text-[13px] font-mono" {...props}>
+                    {children}
+                  </code>
+                );
+              },
+            }}
+          >
+            {response}
+          </ReactMarkdown>
         </div>
       </div>
 
@@ -162,41 +152,6 @@ export default function ResponsePanel({
           ))}
         </div>
       )}
-
-      {/* Feedback section */}
-      <div className="border-t border-[#E4E2DC] pt-4 mb-5">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#9CA3AF] block mb-3">
-          Does this match your situation?
-        </span>
-        <div className="flex flex-wrap gap-2 mb-2">
-          {(Object.keys(FEEDBACK_GUIDANCE) as MatchFeedback[]).map((f) => (
-            <button
-              key={f}
-              onClick={() => handleFeedback(f)}
-              className={`
-                px-4 py-2 text-[13px] font-medium rounded-full border
-                transition-all duration-150
-                ${
-                  feedback === f
-                    ? "bg-[#4338CA] text-white border-[#4338CA]"
-                    : "bg-white text-[#18181B] border-[#E4E2DC] hover:border-[#D4D4D8]"
-                }
-              `}
-            >
-              {f}
-            </button>
-          ))}
-        </div>
-        {feedback && (
-          <motion.p
-            initial={{ opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="text-[13px] text-[#6B7280] mt-2"
-          >
-            {FEEDBACK_GUIDANCE[feedback]}
-          </motion.p>
-        )}
-      </div>
 
       {/* Bottom bar */}
       <div className="flex items-center justify-between border-t border-[#E4E2DC] pt-4">
